@@ -116,7 +116,8 @@ function createGlobalSync() {
     get provider() {
       const EMPTY = { all: new Map(), connected: [], default: {} }
       if (providerQuery.isLoading) return EMPTY
-      return providerQuery.data ?? EMPTY
+      if (providerQuery.data) return providerQuery.data
+      return EMPTY
     },
     get config() {
       if (configQuery.isLoading) return {}

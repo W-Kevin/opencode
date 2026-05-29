@@ -1,9 +1,11 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
+import { Markdown } from "@opencode-ai/ui/markdown"
+import { getFileExtension } from "@opencode-ai/core/util/path"
 import { cloneSelectedLineRange, previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { createLineCommentController } from "@opencode-ai/ui/line-comment-annotations"
 import { sampledChecksum } from "@opencode-ai/core/util/encode"
@@ -19,6 +21,7 @@ import { usePrompt } from "@/context/prompt"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
+import { JsonlTableView } from "@/pages/session/jsonl-table-view"
 
 function FileCommentMenu(props: {
   moreLabel: string
@@ -193,6 +196,8 @@ export function FileTabContent(props: { tab: string }) {
   }
 
   const path = createMemo(() => file.pathFromTab(props.tab))
+  const isMarkdownFile = createMemo(() => getFileExtension(path()).toLowerCase() === "md")
+  const isJsonlFile = createMemo(() => getFileExtension(path()).toLowerCase() === "jsonl")
   const state = createMemo(() => {
     const p = path()
     if (!p) return
@@ -394,6 +399,14 @@ export function FileTabContent(props: { tab: string }) {
     scrollSync.queueRestore()
   })
 
+  const renderJsonl = (source: string) => <JsonlTableView content={source} class="h-full" />
+
+  const renderMarkdown = (source: string) => (
+    <div class="relative overflow-hidden pb-40 px-6 py-4 select-text">
+      <Markdown text={source} cacheKey={cacheKey()} />
+    </div>
+  )
+
   const renderFile = (source: string) => (
     <div class="relative overflow-hidden pb-40">
       <Dynamic
@@ -441,16 +454,21 @@ export function FileTabContent(props: { tab: string }) {
   )
 
   return (
-    <Tabs.Content value={props.tab} class="mt-3 relative h-full">
-      <ScrollView class="h-full" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
-        <Switch>
-          <Match when={state()?.loaded}>{renderFile(contents())}</Match>
-          <Match when={state()?.loading}>
-            <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
-          </Match>
-          <Match when={state()?.error}>{(err) => <div class="px-6 py-4 text-text-weak">{err()}</div>}</Match>
-        </Switch>
-      </ScrollView>
+    <Tabs.Content value={props.tab} class="mt-3 relative flex h-full min-h-0 flex-col overflow-hidden">
+      <Switch>
+        <Match when={state()?.loaded && isJsonlFile()}>{renderJsonl(contents())}</Match>
+        <Match when={state()?.loaded}>
+          <ScrollView class="h-full min-h-0 flex-1" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
+            <Show when={isMarkdownFile()} fallback={renderFile(contents())}>
+              {renderMarkdown(contents())}
+            </Show>
+          </ScrollView>
+        </Match>
+        <Match when={state()?.loading}>
+          <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
+        </Match>
+        <Match when={state()?.error}>{(err) => <div class="px-6 py-4 text-text-weak">{err()}</div>}</Match>
+      </Switch>
     </Tabs.Content>
   )
 }

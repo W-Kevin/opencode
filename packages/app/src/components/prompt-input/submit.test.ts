@@ -82,10 +82,12 @@ beforeAll(async () => {
     useLocal: () => ({
       model: {
         current: () => ({ id: "model", provider: { id: "provider" } }),
+        ensure: () => ({ id: "model", provider: { id: "provider" } }),
         variant: { current: () => variant },
       },
       agent: {
         current: () => ({ name: "agent" }),
+        ensure: () => ({ name: "agent" }),
       },
       session: {
         promote(directory: string, sessionID: string) {

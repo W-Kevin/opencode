@@ -100,7 +100,44 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       })),
     )
 
-    const find = (key: ModelKey) => list().find((m) => m.id === key.modelID && m.provider.id === key.providerID)
+    const find = (key: ModelKey) => {
+      const direct = list().find((m) => m.id === key.modelID && m.provider.id === key.providerID)
+      if (direct) return direct
+
+      const matched = list().find((m) => {
+        if (m.provider.id !== key.providerID) return false
+        if (m.id === key.modelID) return true
+        return !!m.provider.models[key.modelID]
+      })
+      if (matched) return matched
+
+      for (const provider of providers.connected()) {
+        if (provider.id !== key.providerID) continue
+        const info =
+          provider.models[key.modelID] ??
+          Object.values(provider.models).find((model) => model.id === key.modelID)
+        if (!info) continue
+        return {
+          ...info,
+          name: info.name.replace("(latest)", "").trim(),
+          latest: info.name.includes("(latest)"),
+          provider,
+        }
+      }
+
+      for (const provider of providers.connected()) {
+        const info =
+          provider.models[key.modelID] ??
+          Object.values(provider.models).find((model) => model.id === key.modelID)
+        if (!info) continue
+        return {
+          ...info,
+          name: info.name.replace("(latest)", "").trim(),
+          latest: info.name.includes("(latest)"),
+          provider,
+        }
+      }
+    }
 
     function update(model: ModelKey, state: Visibility) {
       const index = store.user.findIndex((x) => x.modelID === model.modelID && x.providerID === model.providerID)

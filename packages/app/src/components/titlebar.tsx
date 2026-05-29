@@ -23,8 +23,6 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Avatar as AvatarV2 } from "@opencode-ai/ui/v2/components/avatar-v2.jsx"
 import { displayName, getProjectAvatarSource, projectForSession } from "@/pages/layout/helpers"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { StatusPopover } from "./status-popover"
-import { SDKProvider } from "@/context/sdk"
 
 type TauriDesktopWindow = {
   startDragging?: () => Promise<void>
@@ -465,15 +463,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   </Show>
                   <div class="min-w-0 flex-1" />
                 </div>
-                <Show when={currentSessionTab()?.dir} keyed>
-                  {(dir) => (
-                    <SDKProvider directory={dir}>
-                      <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-                        <StatusPopover />
-                      </Tooltip>
-                    </SDKProvider>
-                  )}
-                </Show>
+                <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
                 <TitlebarUpdatePill update={props.update} />
                 <Show when={windows() && !electronWindows()}>
                   <div data-tauri-decorum-tb class="flex flex-row" />

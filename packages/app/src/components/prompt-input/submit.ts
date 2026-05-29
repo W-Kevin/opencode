@@ -299,8 +299,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    const currentModel = local.model.current()
-    const currentAgent = local.agent.current()
+    const currentModel = local.model.ensure()
+    const currentAgent = local.agent.ensure()
     const variant = local.model.variant.current()
     if (!currentModel || !currentAgent) {
       showToast({

@@ -501,29 +501,31 @@ export const layer = Layer.effect(
     const read: Interface["read"] = Effect.fn("File.read")(function* (file: string) {
       using _ = log.time("read", { file })
       const ctx = yield* InstanceState.context
-      const full = path.join(ctx.directory, file)
+      const full = path.resolve(ctx.directory, file)
 
       if (!containsPath(full, ctx)) {
         throw new Error("Access denied: path escapes project directory")
       }
 
-      if (isImageByExtension(file)) {
+      const gitFile = path.relative(ctx.directory, full).replaceAll("\\", "/")
+
+      if (isImageByExtension(full)) {
         const exists = yield* appFs.existsSafe(full)
         if (exists) {
           const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
           return {
             type: "text" as const,
             content: Buffer.from(bytes).toString("base64"),
-            mimeType: getImageMimeType(file),
+            mimeType: getImageMimeType(full),
             encoding: "base64" as const,
           }
         }
         return { type: "text" as const, content: "" }
       }
 
-      const knownText = isTextByExtension(file) || isTextByName(file)
+      const knownText = isTextByExtension(full) || isTextByName(full)
 
-      if (isBinaryByExtension(file) && !knownText) return { type: "binary" as const, content: "" }
+      if (isBinaryByExtension(full) && !knownText) return { type: "binary" as const, content: "" }
 
       const exists = yield* appFs.existsSafe(full)
       if (!exists) return { type: "text" as const, content: "" }
@@ -549,13 +551,13 @@ export const layer = Layer.effect(
       )
 
       if (ctx.project.vcs === "git") {
-        let diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--", file])
+        let diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--", gitFile])
         if (!diff.trim()) {
-          diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--staged", "--", file])
+          diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--staged", "--", gitFile])
         }
         if (diff.trim()) {
-          const original = yield* git.show(ctx.directory, "HEAD", file)
-          const patch = structuredPatch(file, file, original, content, "old", "new", {
+          const original = yield* git.show(ctx.directory, "HEAD", gitFile)
+          const patch = structuredPatch(gitFile, gitFile, original, content, "old", "new", {
             context: Infinity,
             ignoreWhitespace: true,
           })

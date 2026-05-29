@@ -1,11 +1,15 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
+import { useQuery } from "@tanstack/solid-query"
 import { batch, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useModels } from "@/context/models"
+import { useQueryOptions } from "@/context/global-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { Persist, persisted } from "@/utils/persist"
+import { pathKey } from "@/utils/path-key"
+import { defaultModelKey, resolveModelKey } from "./model-key"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
@@ -59,10 +63,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sync = useSync()
     const providers = useProviders()
     const models = useModels()
+    const queryOptions = useQueryOptions()
+    const agentsQuery = useQuery(() => queryOptions.agents(pathKey(sdk.directory)))
 
     const id = createMemo(() => params.id || undefined)
-    const list = createMemo(() => sync.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
-    const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
+    const agents = createMemo(() => {
+      if (sync.data.agent.length > 0) return sync.data.agent
+      return agentsQuery.data ?? []
+    })
+    const list = createMemo(() => agents().filter((item) => item.mode !== "subagent" && !item.hidden))
+    const providerLookup = () => ({
+      all: providers.all(),
+      connected: providers.connected(),
+    })
 
     const [saved, setSaved] = persisted(
       {
@@ -89,16 +102,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       last: undefined,
     })
 
-    const validModel = (model: ModelKey) => {
-      const provider = providers.all().get(model.providerID)
-      return !!provider?.models[model.modelID] && connected().has(model.providerID)
-    }
+    const validModel = (model: ModelKey) => !!resolveModelKey(providerLookup(), model)
 
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {
       for (const item of items) {
         const model = item()
         if (!model) continue
-        if (validModel(model)) return model
+        const resolved = resolveModelKey(providerLookup(), model)
+        if (resolved) return resolved
       }
     }
 
@@ -153,21 +164,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     }
 
-    const defaultModel = () => {
-      const defaults = providers.default()
-      for (const provider of providers.connected()) {
-        const configured = defaults[provider.id]
-        if (configured) {
-          const model = { providerID: provider.id, modelID: configured }
-          if (validModel(model)) return model
-        }
-
-        const first = Object.values(provider.models)[0]
-        if (!first) continue
-        const model = { providerID: provider.id, modelID: first.id }
-        if (validModel(model)) return model
-      }
-    }
+    const defaultModel = () =>
+      defaultModelKey({
+        ...providerLookup(),
+        defaults: providers.default(),
+      })
 
     const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
 
@@ -192,9 +193,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             variant: item.variant ?? null,
           })
           const prev = scope()
+          const agentModel = item.model ? resolveModelKey(providerLookup(), item.model) : undefined
           const next = {
             agent: item.name,
-            model: item.model ?? prev?.model,
+            model: agentModel ?? prev?.model,
             variant: item.variant ?? prev?.variant,
           } satisfies State
           const session = id()
@@ -219,6 +221,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         if (!item) return
         agent.set(item.name)
       },
+      ensure() {
+        const item = agent.current()
+        if (item) return item
+        const first = list()[0]
+        if (!first) return
+        agent.set(first.name)
+        return agent.current()
+      },
     }
 
     const current = () => {
@@ -230,6 +240,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (!item) return
       return models.find(item)
     }
+
+    createEffect(() => {
+      if (id()) return
+      const draft = store.draft
+      if (!draft?.model) return
+      const resolved = resolveModelKey(providerLookup(), draft.model)
+      if (resolved?.providerID === draft.model.providerID && resolved.modelID === draft.model.modelID) return
+      if (resolved) {
+        setStore("draft", { ...draft, model: resolved })
+        return
+      }
+      setStore("draft", { ...draft, model: undefined })
+    })
 
     const configured = () => {
       const item = agent.current()
@@ -291,18 +314,30 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
         batch(() => {
+          const resolved = item ? resolveModelKey(providerLookup(), item) : undefined
           setStore("last", {
             type: "model",
             agent: agent.current()?.name,
-            model: item ?? null,
+            model: resolved ?? null,
             variant: selected(),
           })
-          write({ model: item })
-          if (!item) return
-          models.setVisibility(item, true)
+          write({ model: resolved })
+          if (!resolved) return
+          models.setVisibility(resolved, true)
           if (!options?.recent) return
-          models.recent.push(item)
+          models.recent.push(resolved)
         })
+      },
+      applyFallback() {
+        const key = fallback()
+        if (!key) return
+        model.set(key)
+      },
+      ensure() {
+        const item = current()
+        if (item) return item
+        model.applyFallback()
+        return current()
       },
       visible(item: ModelKey) {
         return models.visible(item)

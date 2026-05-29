@@ -194,7 +194,9 @@ export function createChildStoreManager(input: {
               const EMPTY = { all: new Map(), connected: [], default: {} }
               if (providerQuery.isLoading) return EMPTY
               if (providerQuery.data?.all.size === 0 && input.global.provider.all.size > 0) return input.global.provider
-              return providerQuery.data ?? EMPTY
+              if (providerQuery.data) return providerQuery.data
+              if (input.global.provider.all.size > 0) return input.global.provider
+              return EMPTY
             },
             config: {},
             get path() {
