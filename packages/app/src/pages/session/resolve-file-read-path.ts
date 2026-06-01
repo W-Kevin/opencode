@@ -2,34 +2,62 @@ function splitPath(input: string) {
   return input.replace(/\\/g, "/").replace(/\/+$/, "").split("/").filter(Boolean)
 }
 
-function relativeUnixPath(from: string, to: string) {
-  const fromParts = splitPath(from)
-  const toParts = splitPath(to)
-  let index = 0
-  while (index < fromParts.length && index < toParts.length && fromParts[index] === toParts[index]) index++
+function normalizeDirectory(input: string) {
+  return input.replace(/\\/g, "/").replace(/\/+$/, "")
+}
 
-  const up = fromParts.length - index
-  const down = toParts.slice(index)
-  if (up === 0) return down.join("/")
-  return `${"../".repeat(up)}${down.join("/")}`
+function isAbsolutePath(input: string) {
+  return input.startsWith("/") || /^[A-Za-z]:\//.test(input)
+}
+
+function resolveAbsolutePath(file: string, projectDirectory: string) {
+  const normalized = file.replace(/\\/g, "/").trim()
+  if (!normalized) return normalized
+  if (isAbsolutePath(normalized)) return normalized.replace(/\/+$/, "")
+
+  const root = normalizeDirectory(projectDirectory)
+  const parts = [...splitPath(root), ...splitPath(normalized)]
+  const resolved: string[] = []
+  for (const part of parts) {
+    if (part === ".") continue
+    if (part === "..") {
+      resolved.pop()
+      continue
+    }
+    resolved.push(part)
+  }
+
+  if (/^[A-Za-z]:\//.test(root)) {
+    const drive = root.slice(0, 2)
+    return `${drive}/${resolved.slice(1).join("/")}`.replace(/\/+$/, "")
+  }
+
+  return `/${resolved.join("/")}`.replace(/\/+$/, "")
+}
+
+function isInsideDirectory(file: string, root: string) {
+  const fileKey = file.toLowerCase()
+  const rootKey = root.toLowerCase()
+  return fileKey === rootKey || fileKey.startsWith(`${rootKey}/`)
+}
+
+export function resolveFileReadRequest(input: string, projectDirectory: string) {
+  const root = normalizeDirectory(projectDirectory)
+  const absolute = resolveAbsolutePath(input, root)
+  if (!absolute) return { directory: root, path: input }
+
+  if (isInsideDirectory(absolute, root)) {
+    if (absolute.toLowerCase() === root.toLowerCase()) return { directory: root, path: "." }
+    return { directory: root, path: absolute.slice(root.length + 1) }
+  }
+
+  const index = absolute.lastIndexOf("/")
+  if (index === -1) return { directory: root, path: absolute }
+  return { directory: absolute.slice(0, index), path: absolute.slice(index + 1) }
 }
 
 export function resolveFileReadPath(input: string, projectDirectory: string) {
-  const file = input.replace(/\\/g, "/").trim()
-  if (!file) return file
-
-  const root = projectDirectory.replace(/\\/g, "/").replace(/\/+$/, "")
-  const absolute = file.startsWith("/") || /^[A-Za-z]:\//.test(file)
-  if (!absolute) return file
-
-  const normalized = file.replace(/\/+$/, "")
-  const rootKey = root.toLowerCase()
-  const fileKey = normalized.toLowerCase()
-
-  if (fileKey === rootKey) return "."
-  if (fileKey.startsWith(`${rootKey}/`)) return normalized.slice(root.length + 1)
-
-  return relativeUnixPath(root, normalized)
+  return resolveFileReadRequest(input, projectDirectory).path
 }
 
 export function fileContentToImageUrl(content: unknown, filePath: string) {

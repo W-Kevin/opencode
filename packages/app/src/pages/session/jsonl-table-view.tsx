@@ -10,20 +10,20 @@ import {
   jsonlImagePaths,
   parseJsonlContent,
 } from "@/pages/session/parse-jsonl"
-import { fileContentToImageUrl, resolveFileReadPath } from "@/pages/session/resolve-file-read-path"
+import { fileContentToImageUrl, resolveFileReadRequest } from "@/pages/session/resolve-file-read-path"
 
 function JsonlImage(props: { path: string }) {
   const sdk = useSDK()
   const dialog = useDialog()
   const language = useLanguage()
 
-  const readPath = createMemo(() => resolveFileReadPath(props.path, sdk.directory))
+  const readRequest = createMemo(() => resolveFileReadRequest(props.path, sdk.directory))
 
   const [loaded] = createResource(
-    readPath,
-    (path) =>
+    readRequest,
+    (request) =>
       sdk.client.file
-        .read({ path })
+        .read({ path: request.path, directory: request.directory })
         .then((result) => fileContentToImageUrl(result.data, props.path))
         .catch(() => undefined),
   )
